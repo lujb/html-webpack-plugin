@@ -7,6 +7,7 @@ var path = require('path');
 var childCompiler = require('./lib/compiler.js');
 var prettyError = require('./lib/errors.js');
 var chunkSorter = require('./lib/chunksorter.js');
+var upload = require('cdn-loader/lib/upload').default;
 Promise.promisifyAll(fs);
 
 function HtmlWebpackPlugin (options) {
@@ -16,6 +17,7 @@ function HtmlWebpackPlugin (options) {
     filename: 'index.html',
     hash: false,
     inject: true,
+    upload: true,
     compile: true,
     favicon: false,
     minify: false,
@@ -151,7 +153,7 @@ HtmlWebpackPlugin.prototype.apply = function (compiler) {
         return applyPluginsAsyncWaterfall('html-webpack-plugin-alter-asset-tags', true, pluginArgs)
           .then(function (result) {
               // Add the stylesheets, scripts and so on to the resulting html
-            return self.postProcessHtml(html, assets, { body: result.body, head: result.head })
+            return self.postProcessHtml(html, assets, { body: result.body, head: result.head }, compilation)
               .then(function (html) {
                 return _.extend(result, {html: html, assets: assets});
               });
@@ -275,12 +277,65 @@ HtmlWebpackPlugin.prototype.executeTemplate = function (templateFunction, chunks
  *
  * Returns a promise
  */
-HtmlWebpackPlugin.prototype.postProcessHtml = function (html, assets, assetTags) {
+HtmlWebpackPlugin.prototype.postProcessHtml = function (html, assets, assetTags, compilation) {
   var self = this;
   if (typeof html !== 'string') {
     return Promise.reject('Expected html to be a string but got ' + JSON.stringify(html));
   }
   return Promise.resolve()
+    // Upload
+    .then(function () {
+      if (self.options.upload) {
+        var files = [];
+
+        var collect = function (tagDef) {
+          if (tagDef.tagName === 'script') {
+            files.push(tagDef.attributes.src);
+          } else if (tagDef.tagName === 'link') {
+            files.push(tagDef.attributes.href);
+          }
+        }
+
+        assetTags.body.forEach(collect);
+        assetTags.head.forEach(collect);
+
+        var jobs = files.map(function (filename) {
+          var asset = compilation.assets[filename];
+          var fn = self.options.uploadFn || upload
+          if (asset) {
+            let content = '';
+            if (asset.children) {
+              content = asset.children.map(function (item) { return item._value }).join('');
+            } else if (asset._value) {
+              content = asset._value;
+            }
+            return fn.call(null, self.options.uploadUrl, filename, content);
+          }
+        })
+
+        return Promise.all(jobs).then(function (result) {
+          var urls = {};
+          var replaceUrl = function (tagDef) {
+            if (tagDef.tagName === 'script') {
+              var filename = tagDef.attributes.src;
+              tagDef.attributes.src = urls[filename] || filename;
+            } else if (tagDef.tagName === 'link') {
+              var filename = tagDef.attributes.href;
+              tagDef.attributes.href = urls[filename] || filename;
+            }
+          }
+
+          result.forEach(function (data) {
+            urls[path.basename(data[0])] = data[1];
+          })
+
+          assetTags.body.forEach(replaceUrl);
+          assetTags.head.forEach(replaceUrl);
+        })
+      } else {
+        return html;
+      }
+    })
     // Inject
     .then(function () {
       if (self.options.inject) {
