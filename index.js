@@ -7,7 +7,7 @@ var path = require('path');
 var childCompiler = require('./lib/compiler.js');
 var prettyError = require('./lib/errors.js');
 var chunkSorter = require('./lib/chunksorter.js');
-var upload = require('cdn-loader/lib/upload').default;
+var upload = require('local2cdn-loader/lib/upload').default;
 Promise.promisifyAll(fs);
 
 function HtmlWebpackPlugin (options) {
@@ -17,7 +17,6 @@ function HtmlWebpackPlugin (options) {
     filename: 'index.html',
     hash: false,
     inject: true,
-    upload: true,
     compile: true,
     favicon: false,
     minify: false,
@@ -285,7 +284,7 @@ HtmlWebpackPlugin.prototype.postProcessHtml = function (html, assets, assetTags,
   return Promise.resolve()
     // Upload
     .then(function () {
-      if (self.options.upload) {
+      if (self.options.uploadUrl || self.options.uploadFn) {
         var files = [];
 
         var collect = function (tagDef) {
