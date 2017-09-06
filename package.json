@@ -3,6 +3,7 @@
   "version": "2.30.1",
   "description": "Simplifies creation of HTML files to serve your webpack bundles",
   "main": "index.js",
+  "private": true,
   "files": [
     "index.js",
     "default_index.ejs",
